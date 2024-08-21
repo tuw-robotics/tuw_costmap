@@ -160,6 +160,7 @@ void FreespaceLayer::updateWithFreeSpace(
   int max_i,
   int max_j)
 {
+  RCLCPP_DEBUG(logger_, "FreespaceLayer: updateWithFreeSpace");
   if (!enabled_) {
     return;
   }
@@ -167,16 +168,25 @@ void FreespaceLayer::updateWithFreeSpace(
   unsigned char * master_array = master_grid.getCharMap();
   unsigned int span = master_grid.getSizeInCellsX();
 
+  std::map<int, int> hist;
   for (int j = min_j; j < max_j; j++) {
     unsigned int it = j * span + min_i;
     for (int i = min_i; i < max_i; i++) {
       unsigned char new_cost =  costmap_[it];
       unsigned char old_cost = master_array[it];
+      auto entry = hist.find(new_cost);
+      if (entry != hist.end())  hist[new_cost] = hist[new_cost] + 1;
+      else  hist[new_cost] = 1;
+      
       if (new_cost == nav2_costmap_2d::FREE_SPACE) {
         master_array[it] = nav2_costmap_2d::FREE_SPACE;
       }
       it++;
     }
+  } 
+  std::cout << "---" << std::endl;
+  for (const auto& pair : hist) {
+        std::cout << "Key: " << (int) pair.first << ", Value: " << pair.second << std::endl;
   }
 }
 
@@ -252,16 +262,10 @@ unsigned char
 FreespaceLayer::interpretValue(unsigned char value)
 {
   // check if the static value is above the unknown or lethal thresholds
-  if (!track_unknown_space_ && value == unknown_cost_value_) {
-    return NO_INFORMATION;
-  } else if (value >= lethal_threshold_) {
-    return NO_INFORMATION;
-  } else if (trinary_costmap_) {
+  if (value == 0) {
     return FREE_SPACE;
-  }
-
-  double scale = static_cast<double>(value) / lethal_threshold_;
-  return scale * LETHAL_OBSTACLE;
+  } 
+  return NO_INFORMATION;
 }
 
 void
@@ -317,12 +321,21 @@ FreespaceLayer::processMap(const nav_msgs::msg::OccupancyGrid & new_map)
 
   RCLCPP_INFO(logger_, "FreespaceLayer: initialize the costmap with static data");
   // initialize the costmap with static data
+  std::map<unsigned char, int> hist;
   for (unsigned int i = 0; i < size_y; ++i) {
     for (unsigned int j = 0; j < size_x; ++j) {
       unsigned char value = new_map.data[index];
+      auto entry = hist.find(value);
+      if (entry != hist.end())  hist[value] = hist[value] + 1;
+      else  hist[value] = 1;
+
       costmap_[index] = interpretValue(value);
       ++index;
     }
+  }
+  std::cout << "--- interpretValues -- " << std::endl;
+  for (const auto& pair : hist) {
+        std::cout << "Key: " << (int) pair.first << ", Value: " << pair.second << std::endl;
   }
 
   map_frame_ = new_map.header.frame_id;
