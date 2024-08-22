@@ -9,6 +9,10 @@
 
 namespace nav2_costmap_freespace_plugin
 {
+enum LookupTableUpdate{
+  ONCE,
+  ALLWAYS
+};
 
 class FreespaceLayer : public nav2_costmap_2d::CostmapLayer
 {
@@ -61,7 +65,7 @@ void updateWithFreeSpace( nav2_costmap_2d::Costmap2D & master_grid, int min_i, i
    */
   void incomingMap(const nav_msgs::msg::OccupancyGrid::SharedPtr new_map);
 
-  void createLookupTable();
+  void createLookupTable(nav2_costmap_2d::Costmap2D & master_grid);
 
   /**
    * @brief Callback to update the costmap's map from the map_server (or SLAM)
@@ -108,6 +112,7 @@ private:
 
   // to update the master of with the current layer master x,y -> costmap idx 
   std::vector<unsigned int> lookup_;  
+  LookupTableUpdate lookup_table_computation_;
 };
 
 }  // namespace nav2_costmap_freespace_plugin

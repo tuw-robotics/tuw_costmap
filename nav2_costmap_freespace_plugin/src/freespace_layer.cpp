@@ -160,41 +160,18 @@ FreespaceLayer::updateCosts(
     return;
   }
 
-  {
-    /// @ToDo optimierung mit lookuptable 
-
-    RCLCPP_DEBUG(logger_, "FreespaceLayer: isRolling");
-    // If rolling window, the master_grid is unlikely to have same coordinates as this layer
-    unsigned int mx, my;
-    double wx, wy;
-    // Might even be in a different frame
-    geometry_msgs::msg::TransformStamped transform;
-    try {
-      transform = tf_->lookupTransform(
-        map_frame_, global_frame_, tf2::TimePointZero,
-        transform_tolerance_);
-    } catch (tf2::TransformException & ex) {
-      RCLCPP_ERROR(logger_, "FreespaceLayer: %s", ex.what());
-      return;
-    }
-    // Copy map data given proper transformations
-    tf2::Transform tf2_transform;
-
-    tf2::fromMsg(transform.transform, tf2_transform);
-
-    for (int i = min_i; i < max_i; ++i) {
-      for (int j = min_j; j < max_j; ++j) {
-        // Convert master_grid coordinates (i,j) into global_frame_(wx,wy) coordinates
-        layered_costmap_->getCostmap()->mapToWorld(i, j, wx, wy);
-        // Transform from global_frame_ to map_frame_
-        tf2::Vector3 p(wx, wy, 0);
-        p = tf2_transform * p;
-        // Set master_grid with cell from map
-        if (worldToMap(p.x(), p.y(), mx, my)) {
-          auto value = getCost(mx, my);
-          if (value == nav2_costmap_2d::FREE_SPACE) {
-            master_grid.setCost(i, j, value);
-          }
+  createLookupTable(master_grid);
+  RCLCPP_INFO(logger_, "FreespaceLayer: lookup");
+  unsigned char * master_costmap = master_grid.getCharMap();
+  for (int i = min_i; i < max_i; ++i) {
+    for (int j = min_j; j < max_j; ++j) {
+      unsigned int idx_master = master_grid.getIndex(i, j);
+      unsigned int idx_costmap = lookup_[idx_master];
+      if(idx_costmap != std::numeric_limits<unsigned int>::max())
+      {
+        unsigned char value = costmap_[idx_costmap];
+        if (value == nav2_costmap_2d::FREE_SPACE) {
+          master_costmap[idx_master] = value;
         }
       }
     }
@@ -203,12 +180,12 @@ FreespaceLayer::updateCosts(
 }
 
 void
-FreespaceLayer::createLookupTable(){
+FreespaceLayer::createLookupTable(
+  nav2_costmap_2d::Costmap2D & master_grid){
   
-    RCLCPP_INFO(logger_, "FreespaceLayer: createLookupTable");
-  Costmap2D * master = layered_costmap_->getCostmap();
-  unsigned int size_x = master->getSizeInCellsX();
-  unsigned int size_y = master->getSizeInCellsY();
+  RCLCPP_INFO(logger_, "FreespaceLayer: createLookupTable");
+  unsigned int size_x = master_grid.getSizeInCellsX();
+  unsigned int size_y = master_grid.getSizeInCellsY();
   lookup_.resize(size_x*size_y);
 
     geometry_msgs::msg::TransformStamped transform;
@@ -225,15 +202,15 @@ FreespaceLayer::createLookupTable(){
 
     tf2::fromMsg(transform.transform, tf2_transform);
 
-    // If rolling window, the master_grid is unlikely to have same coordinates as this layer
+    // The master_grid is unlikely to have same coordinates as this layer
     unsigned int mx, my;
     double wx, wy;
 
-    unsigned int idx = 0;
     for (unsigned int i = 0; i < size_y; ++i) {
       for (unsigned int j = 0; j < size_x; ++j) {
         // Convert master_grid coordinates (i,j) into global_frame_(wx,wy) coordinates
-        layered_costmap_->getCostmap()->mapToWorld(i, j, wx, wy);
+        layered_costmap_->getCostmap()->mapToWorld(j, i, wx, wy);
+        unsigned int idx = master_grid.getIndex(j, i);
         // Transform from global_frame_ to map_frame_
         tf2::Vector3 p(wx, wy, 0);
         p = tf2_transform * p;
@@ -242,7 +219,7 @@ FreespaceLayer::createLookupTable(){
         if (worldToMap(p.x(), p.y(), mx, my)) {
           value = getIndex(mx, my);
         } 
-        lookup_[idx++] = value;
+        lookup_[idx] = value;
       }
     }
 }
@@ -339,11 +316,13 @@ FreespaceLayer::getParameters()
 
   int temp_lethal_threshold = 0;
   double temp_tf_tol = 0.0;
+  std::string tmp_lookup_table_computation;
 
   declareParameter("enabled", rclcpp::ParameterValue(true));
   declareParameter("map_topic", rclcpp::ParameterValue(""));
   declareParameter("subscribe_to_updates", rclcpp::ParameterValue(false));
   declareParameter("map_subscribe_transient_local", rclcpp::ParameterValue(true));
+  declareParameter("lookup_table_computation", rclcpp::ParameterValue("allways"));
 
   auto node = node_.lock();
   if (!node) {
@@ -363,16 +342,28 @@ FreespaceLayer::getParameters()
   }
 
   node->get_parameter("use_maximum", use_maximum_);
-  node->get_parameter("lethal_cost_threshold", temp_lethal_threshold);
   node->get_parameter("unknown_cost_value", unknown_cost_value_);
   node->get_parameter("trinary_costmap", trinary_costmap_);
   node->get_parameter("transform_tolerance", temp_tf_tol);
+  transform_tolerance_ = tf2::durationFromSec(temp_tf_tol);
+
   // Enforce bounds
+  node->get_parameter("lethal_cost_threshold", temp_lethal_threshold);
   lethal_threshold_ = std::max(std::min(temp_lethal_threshold, 100), 0);
+
+  node->get_parameter("lookup_table_computation", tmp_lookup_table_computation);
+  std::transform(tmp_lookup_table_computation.begin(), tmp_lookup_table_computation.end(), tmp_lookup_table_computation.begin(), ::tolower);
+  if(tmp_lookup_table_computation== "once") 
+    lookup_table_computation_ = LookupTableUpdate::ONCE;
+  else if (tmp_lookup_table_computation == "allways") 
+    lookup_table_computation_ = LookupTableUpdate::ALLWAYS;
+  else 
+    lookup_table_computation_ = LookupTableUpdate::ONCE;
+
   map_received_ = false;
   map_received_in_update_bounds_ = false;
 
-  transform_tolerance_ = tf2::durationFromSec(temp_tf_tol);
+
 }
 
 
