@@ -9,7 +9,7 @@
 
 namespace nav2_costmap_freespace_plugin
 {
-enum LookupTableUpdate{
+enum LookupTableUpdateRule{
   ONCE,
   ALLWAYS
 };
@@ -56,7 +56,6 @@ protected:
    */
   unsigned char interpretValue(unsigned char value);
 
-void updateWithFreeSpace( nav2_costmap_2d::Costmap2D & master_grid, int min_i, int min_j, int max_i, int max_j);
   /**
    * @brief  Callback to update the costmap's map from the map_server
    * @param new_map The map to put into the costmap. The origin of the new
@@ -65,7 +64,11 @@ void updateWithFreeSpace( nav2_costmap_2d::Costmap2D & master_grid, int min_i, i
    */
   void incomingMap(const nav_msgs::msg::OccupancyGrid::SharedPtr new_map);
 
-  void createLookupTable(nav2_costmap_2d::Costmap2D & master_grid);
+  /**
+   * @brief  Updates the lookup table which manages the master and local map relation
+   * @param  master_grid 
+   */
+  void updateLookupTable(nav2_costmap_2d::Costmap2D & master_grid);
 
   /**
    * @brief Callback to update the costmap's map from the map_server (or SLAM)
@@ -77,8 +80,6 @@ private:
 
   std::string global_frame_;  ///< @brief The global frame for the costmap
   std::string map_frame_;  /// @brief frame that map is located in
-
-  bool has_updated_data_{false};
 
   unsigned int x_{0};
   unsigned int y_{0};
@@ -93,26 +94,16 @@ private:
   bool map_subscribe_transient_local_;
   bool subscribe_to_updates_;
   std::string map_topic_;
-  bool track_unknown_space_;
-  bool use_maximum_;
-  unsigned char lethal_threshold_;
-  unsigned char unknown_cost_value_;
-  bool trinary_costmap_;
   bool map_received_{false};
   bool map_received_in_update_bounds_{false};
   tf2::Duration transform_tolerance_;
   nav_msgs::msg::OccupancyGrid::SharedPtr map_buffer_;
-  // Indicates that the entire gradient should be recalculated next time.
-  bool need_recalculation_;
-
-  // Size of gradient in cells
-  int GRADIENT_SIZE = 20;
-  // Step of increasing cost per one cell in gradient
-  int GRADIENT_FACTOR = 10;
 
   // to update the master of with the current layer master x,y -> costmap idx 
-  std::vector<unsigned int> lookup_;  
-  LookupTableUpdate lookup_table_computation_;
+  std::vector<unsigned int> lookup_table_;  
+  // Rule how the lookup table shoud be updated 
+  LookupTableUpdateRule lookup_table_update_rule_;
+  bool lookup_table_update_{true}; // on true the lookup table will be updated before updateing the costs
 };
 
 }  // namespace nav2_costmap_freespace_plugin
