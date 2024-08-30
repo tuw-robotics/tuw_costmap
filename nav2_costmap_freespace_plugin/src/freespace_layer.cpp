@@ -229,31 +229,35 @@ FreespaceLayer::interpretValue(unsigned char value)
 }
 
 void
-FreespaceLayer::processMap(const nav_msgs::msg::OccupancyGrid & new_map)
+FreespaceLayer::processMap(const nav_msgs::msg::OccupancyGrid & map_to_process)
 {
-
-  unsigned int size_x = new_map.info.width;
-  unsigned int size_y = new_map.info.height;
+  static nav_msgs::msg::OccupancyGrid map;
+  if (map == map_to_process){
+    return;
+  }
+  map = map_to_process;
+  unsigned int size_x = map.info.width;
+  unsigned int size_y = map.info.height;
 
   RCLCPP_INFO(
     logger_,
     "FreespaceLayer: processMap a %d X %d map at %f m/pix", size_x, size_y,
-    new_map.info.resolution);
+    map.info.resolution);
 
   // resize costmap if size, resolution or origin do not match
   if (size_x_ != size_x || size_y_ != size_y ||  // NOLINT
-    resolution_ != new_map.info.resolution ||
-    origin_x_ != new_map.info.origin.position.x ||
-    origin_y_ != new_map.info.origin.position.y)
+    resolution_ != map.info.resolution ||
+    origin_x_ != map.info.origin.position.x ||
+    origin_y_ != map.info.origin.position.y)
   {
     // only update the size of the costmap stored locally in this layer
     RCLCPP_INFO(
       logger_,
       "FreespaceLayer: Resizing static layer to %d X %d at %f m/pix", size_x, size_y,
-      new_map.info.resolution);
+      map.info.resolution);
     resizeMap(
-      size_x, size_y, new_map.info.resolution,
-      new_map.info.origin.position.x, new_map.info.origin.position.y);
+      size_x, size_y, map.info.resolution,
+      map.info.origin.position.x, map.info.origin.position.y);
   }
   unsigned int index = 0;
 
@@ -262,18 +266,19 @@ FreespaceLayer::processMap(const nav_msgs::msg::OccupancyGrid & new_map)
   // initialize the costmap with static data
   for (unsigned int i = 0; i < size_y; ++i) {
     for (unsigned int j = 0; j < size_x; ++j) {
-      unsigned char value = new_map.data[index];
+      unsigned char value = map.data[index];
       costmap_[index] = interpretValue(value);
       ++index;
     }
   }
-  map_frame_ = new_map.header.frame_id;
+  map_frame_ = map.header.frame_id;
 
   x_ = y_ = 0;
   width_ = size_x_;
   height_ = size_y_;
 
   current_ = true;
+  lookup_table_update_ = true;
 
 }
 
